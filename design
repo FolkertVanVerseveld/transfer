@@ -1,0 +1,22 @@
+quick and dirty file transfer program
+project specifications and goals:
+
+legenda:
+X implemented items
+* TODO items
+
+plan 0:
+X use argv to determine whether to start server or client
+X establish connection
+X implement network protocol
+
+plan 1:
+X transfer file server->client
+* show progress
+
+plan 2:
+* continue transfer when restarting after connection drop,
+  file corruption, or other stuff
+
+plan 3:
+* use encryption (e.g. serpent and random nonce/pazz shizzle)
