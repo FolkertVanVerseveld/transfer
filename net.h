@@ -45,6 +45,7 @@ int pkgout(struct npkg *pkg, int fd);
 int pkgin(struct npkg *pkg, int fd);
 
 int noclaim(int fd);
+int hack(int fd);
 
 #define nschk(x) \
 	if (x != NS_OK) {\

@@ -50,8 +50,6 @@ loop:
 		pkg.data.stat.name, size
 	);
 	// TODO ask user confirmation
-	pkginit(&pkg, NT_ACK);
-	pkg.data.ack = NT_STAT;
 	/*
 	XXX O_RDONLY does not work for PROT_WRITE on x86, see also:
 	http://stackoverflow.com/questions/33314745/in-c-mmap-the-file-for-write-permission-denied-linux
@@ -82,6 +80,8 @@ loop:
 		pkginit(&pkg, NT_ERR);
 		goto fail;
 	}
+	pkginit(&pkg, NT_ACK);
+	pkg.data.ack = NT_STAT;
 fail:
 	ns = pkgout(&pkg, sock);
 	nschk(ns);
@@ -123,6 +123,12 @@ int cmain(void)
 	server.sin_addr.s_addr = inet_addr(cfg.address);
 	server.sin_family = domain;
 	server.sin_port = htobe16(cfg.port);
+#if 0
+	if (hack(sock)) {
+		perror("hack");
+		goto fail;
+	}
+#endif
 	if (connect(sock, (struct sockaddr*)&server, sizeof(server)) < 0) {
 		perror("connect");
 		goto fail;
