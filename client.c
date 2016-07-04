@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include "client.h"
 #include "dbg.h"
+#include "string.h"
 #include "net.h"
 #include "transfer.h"
 
@@ -57,7 +58,8 @@ loop:
 	int mode = O_CREAT | O_RDWR;
 	if (!(cfg.mode & MODE_FORCE))
 		mode |= O_EXCL;
-	file = open(pkg.data.stat.name, mode, 0664);
+	char *name = pkg.data.stat.name;
+	file = open(name, mode, 0664);
 	if (file == -1) {
 		perror(pkg.data.stat.name);
 		pkginit(&pkg, NT_ERR);
@@ -88,9 +90,14 @@ fail:
 	if (pkg.type == NT_ERR)
 		return 1;
 	/* we are ready to receive some data */
-	char *data = fmap;
-	uint64_t index, max, bcount = (size - 1) / N_CHUNKSZ + 1;
-	for (max = bcount; bcount; --bcount) {
+	char nm[PSTAT_NAMESZ], *data = fmap;
+	char pdone[32], ptot[32];
+	unsigned st_timer = 0;
+	uint64_t index, f_p, max, datasz, bcount = (size - 1) / N_CHUNKSZ + 1;
+	strencpyz(nm, name, sizeof nm, "...");
+	strtosi(ptot, sizeof ptot, size, 3);
+	printf("\033[s");
+	for (f_p = 0, max = bcount; bcount; --bcount) {
 		ns = pkgin(&pkg, sock);
 		nschk(ns);
 		if (pkg.type != NT_FBLK) {
@@ -104,9 +111,22 @@ fail:
 		}
 		memcpy(
 			&data[index * N_CHUNKSZ], pkg.data.chunk.data,
-			index + 1 != max ? N_CHUNKSZ : size % N_CHUNKSZ
+			datasz = index + 1 != max ? N_CHUNKSZ : size % N_CHUNKSZ
+		);
+		if (st_timer) {
+			--st_timer;
+			++f_p;
+			continue;
+		}
+		st_timer = PSTAT_FREQ;
+		strtosi(pdone, sizeof pdone, f_p * N_CHUNKSZ + datasz, 3);
+		++f_p;
+		printf(
+			"%s, %s/%s (%.2f%%)\033[K\033[u",
+			nm, pdone, ptot, (f_p * N_CHUNKSZ + datasz) * 100.0f / size
 		);
 	}
+	printf("\033[u%s, %s/%s (100%%)\033[K\n", nm, ptot, ptot);
 	dirty = 1;
 	goto loop;
 }
@@ -123,12 +143,6 @@ int cmain(void)
 	server.sin_addr.s_addr = inet_addr(cfg.address);
 	server.sin_family = domain;
 	server.sin_port = htobe16(cfg.port);
-#if 0
-	if (hack(sock)) {
-		perror("hack");
-		goto fail;
-	}
-#endif
 	if (connect(sock, (struct sockaddr*)&server, sizeof(server)) < 0) {
 		perror("connect");
 		goto fail;

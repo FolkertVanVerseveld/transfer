@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+#define PSTAT_FREQ 32
+#define PSTAT_NAMESZ 80
+
 #define MODE_SERVER 1
 #define MODE_CLIENT 2
 #define MODE_FORCE 4

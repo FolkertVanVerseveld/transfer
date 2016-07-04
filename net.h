@@ -20,7 +20,7 @@
 #define NT_MAX 3
 
 #define N_HDRSZ 8
-#define N_NAMESZ 256
+#define N_NAMESZ 4096
 #define N_CHUNKSZ 4096
 
 struct npkg {

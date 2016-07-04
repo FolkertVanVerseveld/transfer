@@ -12,7 +12,8 @@ X implement network protocol
 
 plan 1:
 X transfer file server->client
-* show progress
+X show progress
+* show estimated time
 
 plan 2:
 * continue transfer when restarting after connection drop,

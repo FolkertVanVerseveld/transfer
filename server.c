@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include "dbg.h"
 #include "server.h"
+#include "string.h"
 #include "net.h"
 #include "transfer.h"
 
@@ -71,8 +72,13 @@ static int handle(void)
 			goto skip;
 		}
 		printf("sending \"%s\"...\n", *fname);
-		char *data = fmap;
+		char nm[PSTAT_NAMESZ], *data = fmap;
+		char pdone[32], ptot[32];
+		unsigned st_timer = 0;
 		uint64_t index, datasz;
+		strencpyz(nm, *fname, sizeof nm, "...");
+		strtosi(ptot, sizeof ptot, size, 3);
+		printf("\033[s");
 		for (f_i = 0; f_i < size; f_i += datasz) {
 			pkginit(&pkg, NT_FBLK);
 			/* just in case packets arrive in wrong order */
@@ -84,8 +90,23 @@ static int handle(void)
 			memcpy(pkg.data.chunk.data, &data[f_i], datasz);
 			ns = pkgout(&pkg, client);
 			nschk(ns);
+			if (st_timer) {
+				--st_timer;
+				continue;
+			}
+			st_timer = PSTAT_FREQ;
+			strtosi(pdone, sizeof pdone, f_i + datasz, 3);
+			printf(
+				"\033[u%s, %s/%s (%.2f%%)\033[K",
+				nm, pdone, ptot,
+				(f_i + datasz) * 100.0f / size
+			);
 		}
-		puts("transfer completed");
+		printf(
+			"\033[u%s, %s/%s (100%%)\033[K\n"
+			"transfer completed\n",
+			nm, ptot, ptot
+		);
 	skip:
 		++fname;
 		if (file != -1) {
