@@ -114,12 +114,6 @@ int smain(void)
 		perror("noclaim");
 		goto fail;
 	}
-#if 0
-	if (hack(ssock)) {
-		perror("hack");
-		goto fail;
-	}
-#endif
 	if (bind(ssock, (struct sockaddr*)&sa, sizeof(sa)) < 0) {
 		perror("bind");
 		goto fail;

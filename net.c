@@ -23,7 +23,6 @@ int pkgout(struct npkg *pkg, int fd)
 	assert(pkg->type <= NT_MAX);
 	length = nt_ltbl[pkg->type] + N_HDRSZ;
 	pkg->length = htobe16(length);
-	printf("out: type=%u, length=%hu\n", pkg->type, length);
 	while (length) {
 		n = send(fd, pkg, length, 0);
 		if (!n) return NS_LEFT;
@@ -40,11 +39,11 @@ ssize_t pkgread(int fd, void *buf, uint16_t n)
 {
 	ssize_t length;
 	size_t need;
+	char *dst = buf;
 	if (pb_size) {
 		// TODO unit test this
 		uint16_t off;
 		// use remaining data
-		printf("buffered data size=%hu\n", pb_size);
 		// if everything is buffered already
 		if (pb_size >= n)
 			goto copy;
@@ -53,30 +52,19 @@ ssize_t pkgread(int fd, void *buf, uint16_t n)
 		memcpy(buf, pb_data, off = pb_size);
 		pb_size = 0;
 		for (need = n - pb_size; need; need -= length, pb_size += length) {
-			printf("need %lu more byte\n", need);
 			length = recv(fd, &pb_data[pb_size], need, 0);
-			printf("got %zd bytes\n", length);
 			if (length <= 0) return length;
 		}
-		memcpy((char*)buf + off, pb_data, pb_size);
-		if (pb_size > n)
-			memmove(pb_data, &pb_data[pb_size], UINT16_MAX - pb_size);
-		pb_size -= n;
-		return n;
+		dst += off;
+		goto copy;
 	}
 	pb_size = 0;
 	for (need = n; need; need -= length, pb_size += length) {
-		printf("need %lu more bytes\n", need);
 		length = recv(fd, &pb_data[pb_size], need, 0);
-		printf("got %zd bytes\n", length);
 		if (length <= 0) return length;
 	}
-	if (pb_size == n)
-		puts("buffer emptied");
-	else
-		printf("buffer size=%hu\n", pb_size - n);
 copy:
-	memcpy(buf, pb_data, n);
+	memcpy(buf, pb_data, pb_size > n ? n : pb_size);
 	if (pb_size > n)
 		memmove(pb_data, &pb_data[pb_size], UINT16_MAX - pb_size);
 	pb_size -= n;
@@ -85,28 +73,21 @@ copy:
 
 int pkgin(struct npkg *pkg, int fd)
 {
-#if 1
 	ssize_t n;
 	uint16_t length, t_length;
 	n = pkgread(fd, pkg, N_HDRSZ);
 	if (!n) return NS_LEFT;
 	if (n == -1 || n != N_HDRSZ) return NS_ERR;
 	length = be16toh(pkg->length);
-	if (length < 4) {
+	if (length < 4 || length > sizeof(struct npkg)) {
 		fprintf(stderr, "impossibru: length=%u\n", length);
 		return NS_ERR;
-	}
-	printf("in: length=%hu\n", length);
-	if (length > sizeof(struct npkg)) {
-		fprintf(stderr, "impossibru: length=%u\n", length);
-		length = sizeof(struct npkg);
 	}
 	if (pkg->type > NT_MAX) {
 		fprintf(stderr, "bad type: type=%u\n", pkg->type);
 		return NS_ERR;
 	}
 	t_length = nt_ltbl[pkg->type];
-	printf("in: type=%u, t_length=%hu\n", pkg->type, t_length);
 	n = pkgread(fd, &pkg->data, t_length);
 	if (n == -1 || n != t_length) {
 		fprintf(stderr, "impossibru: n=%zu\n", n);
@@ -116,27 +97,6 @@ int pkgin(struct npkg *pkg, int fd)
 	if (length - N_HDRSZ > t_length)
 		return NS_ERR;
 	return NS_OK;
-#else
-	ssize_t n;
-	uint16_t length, t_length;
-	for (length = 0; length < N_HDRSZ;) {
-		n = pkgread(fd, pkg, N_HDRSZ - length);
-		if (!n) return NS_LEFT;
-		if (n < 0 || n > UINT16_MAX)
-			return NS_ERR;
-		length += n;
-	}
-	t_length = nt_ltbl[pkg->type];
-	printf("in: type=%u, length=%hu\n", pkg->type, t_length + N_HDRSZ);
-	for (length = 0; length < t_length;) {
-		n = pkgread(fd, &pkg->data, t_length - length);
-		if (!n) return NS_LEFT;
-		if (n < 0 || n > UINT16_MAX)
-			return NS_ERR;
-		length += n;
-	}
-	return NS_OK;
-#endif
 }
 
 void pkginit(struct npkg *pkg, uint8_t type)
