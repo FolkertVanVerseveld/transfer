@@ -40,3 +40,30 @@ unsigned strtosi(char *str, size_t n, size_t num, unsigned fnum)
 	}
 	return (unsigned)(si - sibase);
 }
+
+void streta(char *str, size_t n, struct timespec start, struct timespec now, size_t p_end, size_t p_now)
+{
+	// XXX use this
+	(void)p_end;
+	struct timespec tmp;
+	char sbuf[32];
+	// XXX potential overflow in struct timespec
+	if (start.tv_sec > now.tv_sec) {
+		tmp = start;
+		start = now;
+		now = tmp;
+	}
+	time_t dt_sec;
+	long dt_msec;
+	if (now.tv_nsec > start.tv_nsec) {
+		dt_sec = now.tv_sec - start.tv_sec;
+		dt_msec = (now.tv_nsec - start.tv_nsec) / 1000000L;
+	} else {
+		dt_sec = now.tv_sec - start.tv_sec - 1;
+		dt_msec = (1000000000L + now.tv_nsec - start.tv_nsec) / 1000000L;
+	}
+	unsigned long dt = dt_sec * 1000 + dt_msec;
+	float p_speed = dt ? p_now * 1000.0f / dt : p_now;
+	strtosi(sbuf, sizeof sbuf, p_speed, 3);
+	snprintf(str, n, "@%s/s in %lums", sbuf, dt);
+}

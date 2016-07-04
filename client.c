@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <time.h>
 #include "client.h"
 #include "dbg.h"
 #include "string.h"
@@ -91,12 +92,16 @@ fail:
 		return 1;
 	/* we are ready to receive some data */
 	char nm[PSTAT_NAMESZ], *data = fmap;
-	char pdone[32], ptot[32];
+	char pdone[32], ptot[32], eta[80];
 	unsigned st_timer = 0;
 	uint64_t index, f_p, max, datasz, bcount = (size - 1) / N_CHUNKSZ + 1;
+	size_t p_now;
 	strencpyz(nm, name, sizeof nm, "...");
 	strtosi(ptot, sizeof ptot, size, 3);
 	printf("\033[s");
+	struct timespec start, now;
+	clock_gettime(CLOCK_MONOTONIC, &start);
+	*eta = '\0';
 	for (f_p = 0, max = bcount; bcount; --bcount) {
 		ns = pkgin(&pkg, sock);
 		nschk(ns);
@@ -116,17 +121,22 @@ fail:
 		if (st_timer) {
 			--st_timer;
 			++f_p;
-			continue;
+			goto new_eta;
 		}
 		st_timer = PSTAT_FREQ;
 		strtosi(pdone, sizeof pdone, f_p * N_CHUNKSZ + datasz, 3);
 		++f_p;
+	new_eta:
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		p_now = f_p * N_CHUNKSZ + datasz;
+		streta(eta, sizeof eta, start, now, p_now, size);
 		printf(
-			"%s, %s/%s (%.2f%%)\033[K\033[u",
-			nm, pdone, ptot, (f_p * N_CHUNKSZ + datasz) * 100.0f / size
+			"\033[u%s, %s/%s (%.2f%%) %s\033[K",
+			nm, pdone, ptot,
+			p_now * 100.0f / size, eta
 		);
 	}
-	printf("\033[u%s, %s/%s (100%%)\033[K\n", nm, ptot, ptot);
+	printf("\033[u%s, %s/%s (100%%) %s\033[K\n", nm, ptot, ptot, eta);
 	dirty = 1;
 	goto loop;
 }

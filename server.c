@@ -8,6 +8,7 @@
 #include <sys/mman.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <time.h>
 #include "dbg.h"
 #include "server.h"
 #include "string.h"
@@ -73,12 +74,16 @@ static int handle(void)
 		}
 		printf("sending \"%s\"...\n", *fname);
 		char nm[PSTAT_NAMESZ], *data = fmap;
-		char pdone[32], ptot[32];
+		char pdone[32], ptot[32], eta[80];
 		unsigned st_timer = 0;
 		uint64_t index, datasz;
+		size_t p_now;
 		strencpyz(nm, *fname, sizeof nm, "...");
 		strtosi(ptot, sizeof ptot, size, 3);
 		printf("\033[s");
+		struct timespec start, now;
+		clock_gettime(CLOCK_MONOTONIC, &start);
+		*eta = '\0';
 		for (f_i = 0; f_i < size; f_i += datasz) {
 			pkginit(&pkg, NT_FBLK);
 			/* just in case packets arrive in wrong order */
@@ -90,22 +95,26 @@ static int handle(void)
 			memcpy(pkg.data.chunk.data, &data[f_i], datasz);
 			ns = pkgout(&pkg, client);
 			nschk(ns);
+			p_now = f_i + datasz;
 			if (st_timer) {
 				--st_timer;
-				continue;
+				goto new_eta;
 			}
 			st_timer = PSTAT_FREQ;
-			strtosi(pdone, sizeof pdone, f_i + datasz, 3);
+			strtosi(pdone, sizeof pdone, p_now, 3);
+		new_eta:
+			clock_gettime(CLOCK_MONOTONIC, &now);
+			streta(eta, sizeof eta, start, now, p_now, size);
 			printf(
-				"\033[u%s, %s/%s (%.2f%%)\033[K",
+				"\033[u%s, %s/%s (%.2f%%) %s\033[K",
 				nm, pdone, ptot,
-				(f_i + datasz) * 100.0f / size
+				p_now * 100.0f / size, eta
 			);
 		}
 		printf(
-			"\033[u%s, %s/%s (100%%)\033[K\n"
+			"\033[u%s, %s/%s (100%%) %s\033[K\n"
 			"transfer completed\n",
-			nm, ptot, ptot
+			nm, ptot, ptot, eta
 		);
 	skip:
 		++fname;

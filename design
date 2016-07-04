@@ -13,7 +13,7 @@ X implement network protocol
 plan 1:
 X transfer file server->client
 X show progress
-* show estimated time
+X show estimated time
 
 plan 2:
 * continue transfer when restarting after connection drop,
@@ -21,3 +21,6 @@ plan 2:
 
 plan 3:
 * use encryption (e.g. serpent and random nonce/pazz shizzle)
+
+plan 4:
+* transfer file client->server
