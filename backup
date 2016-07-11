@@ -1,0 +1,5 @@
+#!/bin/bash -e
+make clean
+dir="${PWD##*/}"
+cd ..
+tar jcf "$dir".tar.xz "$dir"
