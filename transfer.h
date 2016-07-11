@@ -9,6 +9,7 @@
 #define MODE_SERVER 1
 #define MODE_CLIENT 2
 #define MODE_FORCE 4
+#define MODE_RECOVER 8
 
 struct cfg {
 	unsigned mode;

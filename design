@@ -16,7 +16,7 @@ X show progress
 X show estimated time
 
 plan 2:
-* continue transfer when restarting after connection drop,
+X continue transfer when restarting after connection drop,
   file corruption, or other stuff
 
 plan 3:

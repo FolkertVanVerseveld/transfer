@@ -18,11 +18,61 @@ static int sock = -1, file = -1;
 static void *fmap = MAP_FAILED;
 static size_t fmapsz;
 static struct sockaddr_in server;
+static uint64_t bcount;
+static uint64_t skip = 0;
+
+static int recover(void)
+{
+	struct npkg pkg;
+	int ns;
+	memset(&pkg, 0, sizeof pkg);
+	pkginit(&pkg, NT_CHK);
+	ns = pkgout(&pkg, sock);
+	nschk(ns);
+	puts("receiving checksums...");
+	uint64_t i, j, pos;
+	bcount = (fmapsz - 1) / N_CHUNKSZ + 1;
+	uint32_t sum, sump;
+	size_t n;
+	const uint8_t *map = fmap;
+	for (i = 0; i < bcount; ++i) {
+		ns = pkgin(&pkg, sock);
+		nschk(ns);
+		if (pkg.type != NT_CHK) {
+			fputs("communication error: NT_CHK expected\n", stderr);
+			return 1;
+		}
+		j = be64toh(pkg.data.chk.index);
+		if ((pos = j * N_CHUNKSZ) <= fmapsz)
+			n = N_CHUNKSZ;
+		else
+			n = fmapsz - pos;
+		sum = crc32(0, map + pos, n);
+		pkginit(&pkg, NT_ACK);
+		sump = be32toh(pkg.data.chk.sum);
+		if (sum != sump) {
+			char poff[32];
+			strtosi(poff, sizeof poff, j * N_CHUNKSZ, 3);
+			printf("found diff at %s in block %lu\n", poff, j);
+			skip = j;
+			pkginit(&pkg, NT_CHK);
+		}
+		ns = pkgout(&pkg, sock);
+		nschk(ns);
+		if (pkg.type == NT_CHK)
+			break;
+	}
+	return 0;
+}
 
 static int handle(void)
 {
 	struct npkg pkg;
 	int dirty = 0;
+	char nm[PSTAT_NAMESZ], *data;
+	char pdone[32], ptot[32], eta[80];
+	unsigned st_timer;
+	uint64_t index, f_p, max, datasz;
 loop:
 	memset(&pkg, 0, sizeof pkg);
 	int ns = pkgin(&pkg, sock);
@@ -35,7 +85,7 @@ loop:
 				fputs("other left\n", stderr);
 			return 0;
 		default:
-			fprintf(stderr,"network error: code %u\n", ns);
+			fprintf(stderr, "network error: code %u\n", ns);
 			return ns;
 		}
 	}
@@ -57,16 +107,34 @@ loop:
 	http://stackoverflow.com/questions/33314745/in-c-mmap-the-file-for-write-permission-denied-linux
 	*/
 	int mode = O_CREAT | O_RDWR;
-	if (!(cfg.mode & MODE_FORCE))
-		mode |= O_EXCL;
 	char *name = pkg.data.stat.name;
+	int exist = 0;
+	struct stat st;
+	if (!stat(name, &st))
+		exist = 1;
+	if (!(cfg.mode & (MODE_FORCE | MODE_RECOVER)))
+		mode |= O_EXCL;
 	file = open(name, mode, 0664);
 	if (file == -1) {
-		perror(pkg.data.stat.name);
+		perror(name);
 		pkginit(&pkg, NT_ERR);
 		goto fail;
 	}
-	if (posix_fallocate(file, 0, size)) {
+	int resize = 1, chk = 0;
+	if (exist && (cfg.mode & MODE_RECOVER)) {
+		if ((resize = st.st_size != size) && !(cfg.mode & MODE_FORCE)) {
+			fprintf(
+				stderr,
+				"Can't recover transfer,"
+				"file size mismatch: have %zu, but got %zu\n",
+				st.st_size, size
+			);
+			pkginit(&pkg, NT_ERR);
+			goto fail;
+		}
+		chk = 1;
+	}
+	if (resize && posix_fallocate(file, 0, size)) {
 		perror("preallocate failed");
 		fputs(
 			"This filesystem does not have enough disk space\n"
@@ -77,9 +145,19 @@ loop:
 		pkginit(&pkg, NT_ERR);
 		goto fail;
 	}
-	fmap = mmap(NULL, fmapsz = size, PROT_WRITE, MAP_SHARED, file, 0);
+	int prot = PROT_WRITE;
+	if (exist && (cfg.mode & MODE_RECOVER))
+		prot |= PROT_READ;
+	fmap = mmap(NULL, fmapsz = size, prot, MAP_SHARED, file, 0);
 	if (fmap == MAP_FAILED) {
 		perror("mmap");
+		pkginit(&pkg, NT_ERR);
+		goto fail;
+	}
+	if (chk) {
+		if (!recover())
+			goto restore;
+		fputs("Can't recover transfer\n", stderr);
 		pkginit(&pkg, NT_ERR);
 		goto fail;
 	}
@@ -90,11 +168,12 @@ fail:
 	nschk(ns);
 	if (pkg.type == NT_ERR)
 		return 1;
+	skip = 0;
 	/* we are ready to receive some data */
-	char nm[PSTAT_NAMESZ], *data = fmap;
-	char pdone[32], ptot[32], eta[80];
-	unsigned st_timer = 0;
-	uint64_t index, f_p, max, datasz, bcount = (size - 1) / N_CHUNKSZ + 1;
+restore:
+	data = fmap;
+	st_timer = 0;
+	bcount = (size - 1) / N_CHUNKSZ + 1;
 	size_t p_now;
 	strencpyz(nm, name, sizeof nm, "...");
 	strtosi(ptot, sizeof ptot, size, 3);
@@ -102,7 +181,7 @@ fail:
 	struct timespec start, now;
 	clock_gettime(CLOCK_MONOTONIC, &start);
 	*eta = '\0';
-	for (f_p = 0, max = bcount; bcount; --bcount) {
+	for (f_p = 0, max = bcount, bcount -= skip; bcount; --bcount) {
 		ns = pkgin(&pkg, sock);
 		nschk(ns);
 		if (pkg.type != NT_FBLK) {

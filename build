@@ -1,5 +1,5 @@
 #!/bin/bash -e
-# Simple script that creates a Makefile for all c++ files that contain a main function
+# Simple script that creates a Makefile for all c files that contain a main function
 CC=gcc
 cstd='-std=gnu99'
 CFLAGS="-D_LARGEFILE64_SOURCE -Wall -Wextra -pedantic $cstd $*"

@@ -20,6 +20,45 @@ static void *fmap = MAP_FAILED;
 static size_t fmapsz;
 static struct sockaddr_in sa, ca;
 static socklen_t cl;
+static uint64_t skip = 0;
+
+static int recover(void)
+{
+	struct npkg pkg;
+	int ns;
+	puts("sending checksums...");
+	uint8_t *map = fmap;
+	uint32_t sum;
+	size_t n;
+	for (uint64_t i, pos = 0; pos < fmapsz; pos += N_CHUNKSZ, ++i) {
+		if (pos + N_CHUNKSZ <= fmapsz)
+			n = N_CHUNKSZ;
+		else
+			n = fmapsz - pos;
+		memset(&pkg, 0, sizeof pkg);
+		pkginit(&pkg, NT_CHK);
+		pkg.data.chk.index = htobe64(i);
+		sum = crc32(0, map + pos, n);
+		pkg.data.chk.sum = htobe32(sum);
+		ns = pkgout(&pkg, client); // FIXME Syscall param socketcall.sendto(msg) points to uninitialised byte(s)
+		nschk(ns);
+		ns = pkgin(&pkg, client);
+		nschk(ns);
+		if (pkg.type == NT_CHK) {
+			char poff[32];
+			strtosi(poff, sizeof poff, i * N_CHUNKSZ, 3);
+			printf("found diff at %s in block %lu\n", poff, i);
+			skip = i;
+			break;
+		}
+		if (pkg.type != NT_ACK) {
+			if (pkg.type != NT_ERR)
+				fputs("communication error: NT_ACK or NT_CHK expected\n", stderr);
+			return 1;
+		}
+	}
+	return 0;
+}
 
 static int handle(void)
 {
@@ -27,6 +66,8 @@ static int handle(void)
 	struct stat st;
 	int abort = 0, ret = 0, ns;
 	char **fname = cfg.files;
+	char nm[PSTAT_NAMESZ], *data = fmap;
+	char pdone[32], ptot[32], eta[80];
 	while (!abort && *fname) {
 		fmap = MAP_FAILED;
 		file = open(*fname, O_RDONLY);
@@ -59,6 +100,10 @@ static int handle(void)
 		ns = pkgin(&pkg, client);
 		nschk(ns);
 		if (pkg.type != NT_ACK) {
+			if (pkg.type == NT_CHK) {
+				ret = recover();
+				goto restore;
+			}
 			if (pkg.type == NT_ERR) {
 				fputs(
 					"transfer failed\n"
@@ -73,8 +118,9 @@ static int handle(void)
 			goto skip;
 		}
 		printf("sending \"%s\"...\n", *fname);
-		char nm[PSTAT_NAMESZ], *data = fmap;
-		char pdone[32], ptot[32], eta[80];
+		skip = 0;
+	restore:
+		data = fmap;
 		unsigned st_timer = 0;
 		uint64_t index, datasz;
 		size_t p_now;
@@ -84,7 +130,7 @@ static int handle(void)
 		struct timespec start, now;
 		clock_gettime(CLOCK_MONOTONIC, &start);
 		*eta = '\0';
-		for (f_i = 0; f_i < size; f_i += datasz) {
+		for (f_i = skip * N_CHUNKSZ; f_i < size; f_i += datasz) {
 			pkginit(&pkg, NT_FBLK);
 			/* just in case packets arrive in wrong order */
 			index = f_i / N_CHUNKSZ;
@@ -122,8 +168,10 @@ static int handle(void)
 			close(file);
 			file = -1;
 		}
-		if (fmap != MAP_FAILED)
+		if (fmap != MAP_FAILED) {
 			munmap(fmap, fmapsz);
+			fmap = MAP_FAILED;
+		}
 	}
 	return ret;
 }

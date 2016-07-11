@@ -14,6 +14,8 @@
 
 #define VERSION "0"
 
+static int help = 0;
+
 struct cfg cfg = {
 	.port = PORT,
 	.address = "127.0.0.1",
@@ -34,10 +36,11 @@ static int parse_opt(int argc, char **argv)
 {
 	int c, o_i;
 	while (1) {
-		c = getopt_long(argc, argv, "hscp:a:f", long_opt, &o_i);
+		c = getopt_long(argc, argv, "hscp:a:fr", long_opt, &o_i);
 		if (c == -1) break;
 		switch (c) {
 		case 'h':
+			help = 1;
 			puts(
 				"Quick and Dirty file transfer\n"
 				"usage: transfer OPTIONS FILE...\n"
@@ -50,6 +53,7 @@ static int parse_opt(int argc, char **argv)
 				" p port    transfer endpoint number\n"
 				" a address transfer endpoint IP\n"
 				" f force   overwrite existing files\n"
+				" r recover restart interrupted transfer"
 			);
 			break;
 		case 's':
@@ -85,6 +89,9 @@ static int parse_opt(int argc, char **argv)
 		case 'f':
 			cfg.mode |= MODE_FORCE;
 			break;
+		case 'r':
+			cfg.mode |= MODE_RECOVER;
+			break;
 		}
 	}
 	return o_i;
@@ -112,6 +119,7 @@ int main(int argc, char **argv)
 		}
 	}
 	if (!(cfg.mode & (MODE_SERVER | MODE_CLIENT))) {
+		if (help) return 0;
 		fputs(
 			"bad mode: not master or slave\n"
 			"specify -s or -c to start master or slave\n",
@@ -119,5 +127,6 @@ int main(int argc, char **argv)
 		);
 		return 1;
 	}
+	netinit();
 	return cfg.mode & MODE_SERVER ? smain() : cmain();
 }

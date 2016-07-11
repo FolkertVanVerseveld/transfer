@@ -17,7 +17,8 @@
 #define NT_ERR 1
 #define NT_STAT 2
 #define NT_FBLK 3
-#define NT_MAX 3
+#define NT_CHK 4
+#define NT_MAX 4
 
 #define N_HDRSZ 8
 #define N_NAMESZ 4096
@@ -36,10 +37,16 @@ struct npkg {
 			uint64_t index;
 			char data[N_CHUNKSZ];
 		} chunk;
+		struct {
+			uint64_t index;
+			uint32_t sum;
+		} chk;
 		uint8_t ack;
 	} data;
 };
 
+void netinit(void);
+uint32_t crc32(uint32_t sum, const void *buf, size_t n);
 void pkginit(struct npkg *pkg, uint8_t type);
 int pkgout(struct npkg *pkg, int fd);
 int pkgin(struct npkg *pkg, int fd);

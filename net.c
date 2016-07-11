@@ -14,7 +14,36 @@ static const uint16_t nt_ltbl[NT_MAX + 1] = {
 	[NT_ERR] = 1,
 	[NT_STAT] = sizeof(uint64_t) + N_NAMESZ,
 	[NT_FBLK] = sizeof(uint64_t) + N_CHUNKSZ,
+	[NT_CHK] = sizeof(uint64_t) + sizeof(uint32_t),
 };
+
+static uint32_t chktbl[256];
+
+void netinit(void)
+{
+	/* Calculate CRC table. */
+	for (int i = 0; i < 256; i++) {
+		uint32_t rem = i;  /* remainder from polynomial division */
+		for (int j = 0; j < 8; j++) {
+			if (rem & 1) {
+				rem >>= 1;
+				rem ^= 0xedb88320;
+			} else
+				rem >>= 1;
+		}
+		chktbl[i] = rem;
+	}
+}
+
+uint32_t crc32(uint32_t crc, const void *buf, size_t n)
+{
+	const uint8_t *p, *q;
+	crc = ~crc;
+	q = (const uint8_t*)buf + n;
+	for (p = buf; p < q; p++)
+		crc = (crc >> 8) ^ chktbl[(crc & 0xff) ^ *p];
+	return ~crc;
+}
 
 int pkgout(struct npkg *pkg, int fd)
 {
